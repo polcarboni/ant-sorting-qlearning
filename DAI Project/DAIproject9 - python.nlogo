@@ -1,4 +1,5 @@
-extensions [qlearningextension]
+extensions [qlearningextension
+py]
 
 ;; 2 Breeds per 2 learning: individuale e collettivo
 Breed [Ants Ant]
@@ -34,6 +35,21 @@ ants-own [
   density
 ]
 
+queens-own [
+  reward-list
+
+  reward
+  actionperformed
+
+  walk-counter
+
+  ;RL - Parameters
+  patch-under
+  hold
+  last-seen
+  density
+]
+
 
 to-report bla
   report " "
@@ -43,6 +59,11 @@ end
 to setup
   clear-all
   reset-ticks
+
+  py:setup py:python
+  (py:run
+    "import numpy as np"
+    "import sklearn.cluster as cl")
 
   create-ants population [
 
@@ -61,6 +82,7 @@ to setup
 
   print "ANTS CREATED"
 
+  create-queens 1
 
   ;; 50 e 4 sono il numero di oggetti + il numero di colori presenti (anche nel random 4)
   ;; ERRORE NELLA GENERAZIONE DEL NUMERO DI PATCH OCLORATE
@@ -81,6 +103,15 @@ to setup
     set last-seen 0
     setxy random world-width random world-height
 
+  ]
+
+ask Queens [
+    set color white
+    set shape "bug"
+    set size 1.8
+    set last-seen 0
+    setxy random world-width random world-height
+
     qlearningextension:state-def-extra ["hold" "patch-under" "last-seen" "density"] [bla] ;;["xcor" "ycor"]
     (qlearningextension:actions [pick-up-move] [drop-move] [hold-move])
     qlearningextension:reward [rewardFunc]
@@ -88,7 +119,6 @@ to setup
     qlearningextension:action-selection "e-greedy" [0.05 0.9]
     qlearningextension:learning-rate 1
     qlearningextension:discount-factor 0
-
   ]
 
 
@@ -100,7 +130,7 @@ to go
   set average-density-plot 0
 
 
-  ask Ants [
+  ask Queens [
 
     if verbose-state [
       print "Hold - Patch - Memory - Density"
@@ -118,6 +148,8 @@ to go
       print(qlearningextension:get-qtable)
 
       print " "
+      py:set "x" qlearningextension:get-qtable
+      show py:runresult "x"
     ]
   ]
 
@@ -143,7 +175,18 @@ to go
   set average-density-plot density-plot / patch-count
 
 
+  ask Ants [
+    ;lettura della table
+    ;scelta dell'azione, inputpy: varibaili di stato, outputpy: azione scelta 0 1 2
 
+    update-seen
+
+    ;python here
+
+    ;if action selected = 0. Fai pick
+    ;if action selecte = 1 fai drop
+    ;if action selected = 2 fai walk
+  ]
 
   tick
 end
@@ -482,7 +525,7 @@ population
 population
 1
 25
-21.0
+13.0
 1
 1
 NIL
@@ -496,7 +539,7 @@ SLIDER
 max-memory
 max-memory
 05
-10
+9
 9.0
 1
 1
@@ -549,7 +592,7 @@ objects-number
 objects-number
 5
 400
-328.0
+337.0
 1
 1
 NIL
@@ -618,7 +661,7 @@ SWITCH
 188
 ant-label
 ant-label
-1
+0
 1
 -1000
 
@@ -659,7 +702,7 @@ lower-threshold
 lower-threshold
 0
 4
-1.0
+4.0
 1
 1
 NIL

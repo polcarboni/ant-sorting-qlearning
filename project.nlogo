@@ -5,23 +5,24 @@ Breed [Ants Ant]
 Breed [Queens Queen]
 
 globals [
-  patch-label-active
-  ant-label-active
+  patch-switch
 
-  ;Graph variables
   density-plot
   average-density-plot
   sum-density
+  ant-label2
+
   objects-number-const
   patch-count
 ]
 
 patches-own [patch-density]
 
-
+;; Variabili per learning e per rewards
 ants-own [
   reward-list
 
+  dens
   reward
   actionperformed
 
@@ -34,6 +35,21 @@ ants-own [
   density
 ]
 
+queens-own [
+  reward-list
+
+  dens
+  reward
+  actionperformed
+
+  walk-counter
+
+  ;RL - Parameters
+  patch-under
+  hold
+  last-seen
+  density
+]
 
 to-report bla
   report " "
@@ -45,22 +61,16 @@ to setup
   reset-ticks
 
   create-ants population [
-
     ifelse ant-label [
-      if ant-label-type = "last-seen" [set label last-seen]
-      if ant-label-type = "density" [set label density]
+      set label last-seen
+      set ant-label2 true]
+    [set ant-label2 false]
 
-      set ant-label-active 1
-    ]
-    [
-      set ant-label-active 0
-    ]
+    ifelse patch-label [set patch-switch 1] [set patch-switch 0]
+
   ]
-
-  ifelse patch-label [set patch-label-active 1] [set patch-label-active 0]
-
   print "ANTS CREATED"
-
+  create-queens 1
 
   ;; 50 e 4 sono il numero di oggetti + il numero di colori presenti (anche nel random 4)
   ;; ERRORE NELLA GENERAZIONE DEL NUMERO DI PATCH OCLORATE
@@ -73,6 +83,26 @@ to setup
 
   ]
     print "PATCH COLORS SET"
+
+  ;ask patch -25 22 [set plabel patch-density]
+
+  ask Queens [
+    set color white
+    set shape "bug"
+    set size 1.5
+    set last-seen 0
+    setxy random world-width random world-height
+
+    qlearningextension:state-def-extra ["hold" "patch-under" "last-seen" "density"] [bla] ;;["xcor" "ycor"]
+    (qlearningextension:actions [pick-up-move] [drop-move] [hold-move])
+    qlearningextension:reward [rewardFunc]
+    qlearningextension:end-episode [isEndState] resetEpisode
+    qlearningextension:action-selection "e-greedy" [0.05 0.9]
+    qlearningextension:learning-rate 1
+    qlearningextension:discount-factor 0
+
+
+  ]
 
   ask Ants [
     set color white
@@ -99,7 +129,6 @@ to go
   set density-plot 0
   set average-density-plot 0
 
-
   ask Ants [
 
     if verbose-state [
@@ -121,7 +150,10 @@ to go
     ]
   ]
 
+  ask queens [qlearningextension:learning]
+
   ask patches [
+
 
     ifelse pcolor = black
     [set patch-density 0]
@@ -162,7 +194,7 @@ to pick-up-move
   if hold = 0 and walk-counter = 0
   [
     if patch-under = 0 [set reward 0]
-    if patch-under = 1  and density < upper-threshold
+    if patch-under = 1                                          and density < upper-threshold
     [
       if density < density-threshold [set reward 1]
       if density >= density-threshold  [set reward -1]
@@ -193,7 +225,7 @@ to drop-move
     set actionperformed "dropF"
   ]
 
-  if hold = 1
+  if hold = 1 ;and actionperformed != "pickup"
   [
     if patch-under = 1
     [
@@ -293,9 +325,8 @@ to update-seen
     set last-seen last-seen + 1
     if last-seen > max-memory [set last-seen max-memory]]
 
-  ant-label-function
 
-
+  if ant-label2 [set label last-seen]
 
 end
 
@@ -356,45 +387,19 @@ end
 ;;___________________________UTILITIES____________________________________
 
 to patch-label-function
-
-  if patch-label-active = 0 and patch-label = 1
+  if patch-switch = 0 and patch-label = 1
   [
-    set patch-label-active 1
+    set patch-switch 1
     if patch-density != 0 [set plabel patch-density]
 
   ]
 
-  if patch-label-active = 1 and patch-label = 0
+  if patch-switch = 1 and patch-label = 0
   [
-    set patch-label-active 0
+    set patch-switch 0
     ask patches [set plabel ""]
   ]
 
-end
-
-to ant-label-function
-  ask ants [
-    if ant-label-active = 1
-  [
-    if ant-label = true [
-      if ant-label-type = "last-seen" [set label last-seen]
-      if ant-label-type = "density" [set label density]]
-
-    if ant-label = false [
-      set label "X"
-      print "label spente"
-      set ant-label-active 0]
-  ]
-
-  if ant-label-active = 0
-  [
-    if ant-label = true [
-      if ant-label-type = "last-seen" [set label last-seen]
-      if ant-label-type = "density" [set label density]
-      set ant-label-active 1
-    ]
-  ]
-  ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -442,10 +447,10 @@ NIL
 1
 
 SLIDER
-44
-17
-216
-50
+215
+451
+387
+484
 episode-length
 episode-length
 20000
@@ -457,10 +462,10 @@ NIL
 HORIZONTAL
 
 BUTTON
-148
-488
-204
-521
+332
+411
+388
+444
 Go
 if (isEndState = false) [go]
 T
@@ -510,7 +515,7 @@ SWITCH
 601
 verbose
 verbose
-1
+0
 1
 -1000
 
@@ -521,7 +526,7 @@ SWITCH
 562
 verbose-state
 verbose-state
-1
+0
 1
 -1000
 
@@ -549,7 +554,7 @@ objects-number
 objects-number
 5
 400
-328.0
+325.0
 1
 1
 NIL
@@ -571,10 +576,10 @@ NIL
 HORIZONTAL
 
 SWITCH
-28
-155
-139
-188
+95
+490
+206
+523
 patch-label
 patch-label
 0
@@ -612,21 +617,39 @@ NIL
 HORIZONTAL
 
 SWITCH
-289
-155
-392
-188
+103
+452
+206
+485
 ant-label
 ant-label
-1
+0
 1
 -1000
 
 PLOT
-68
-198
-397
-430
+1108
+25
+1416
+231
+Total Density (should be max 9*object-numbers)
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot density-plot"
+
+PLOT
+1097
+255
+1505
+535
 Average Density
 NIL
 NIL
@@ -639,31 +662,6 @@ false
 "" ""
 PENS
 "default" 1.0 0 -16777216 true "" "plot average-density-plot"
-
-CHOOSER
-144
-143
-282
-188
-ant-label-type
-ant-label-type
-"last-seen" "density"
-0
-
-SLIDER
-86
-447
-258
-480
-lower-threshold
-lower-threshold
-0
-4
-1.0
-1
-1
-NIL
-HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?
