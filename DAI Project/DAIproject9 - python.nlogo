@@ -6,8 +6,7 @@ Breed [Ants Ant]
 Breed [Queens Queen]
 
 globals [
-  patch-label-active
-  ant-label-active
+  leader-learning-const
 
   ;Graph variables
   density-plot
@@ -15,6 +14,9 @@ globals [
   sum-density
   objects-number-const
   patch-count
+
+  update-count
+  table
 ]
 
 patches-own [patch-density]
@@ -27,6 +29,8 @@ ants-own [
   actionperformed
 
   walk-counter
+
+  act
 
   ;RL - Parameters
   patch-under
@@ -55,34 +59,36 @@ to-report bla
   report " "
 end
 
-;; Setup dell'environment
+;;___________________________________SETUP____________________________________
+
 to setup
   clear-all
   reset-ticks
 
   py:setup py:python
   (py:run
-    "import numpy as np"
-    "import sklearn.cluster as cl")
+  "import string"
+  "import random"
+  "hold = 0"
+  "patch = 0"
+  "memory = 0"
+  "density = 0")
 
-  create-ants population [
 
-    ifelse ant-label [
-      if ant-label-type = "last-seen" [set label last-seen]
-      if ant-label-type = "density" [set label density]
+  create-ants population []
 
-      set ant-label-active 1
-    ]
-    [
-      set ant-label-active 0
-    ]
+  ifelse leader-learning
+  [
+    set leader-learning-const 1
+    create-queens 1
   ]
+  [set leader-learning-const 0]
 
-  ifelse patch-label [set patch-label-active 1] [set patch-label-active 0]
+
 
   print "ANTS CREATED"
 
-  create-queens 1
+
 
   ;; 50 e 4 sono il numero di oggetti + il numero di colori presenti (anche nel random 4)
   ;; ERRORE NELLA GENERAZIONE DEL NUMERO DI PATCH OCLORATE
@@ -103,6 +109,17 @@ to setup
     set last-seen 0
     setxy random world-width random world-height
 
+    if leader-learning-const = 0 [
+
+      qlearningextension:state-def-extra ["hold" "patch-under" "last-seen" "density"] [bla] ;;["xcor" "ycor"]
+      (qlearningextension:actions [pick-up-move] [drop-move] [hold-move])
+      qlearningextension:reward [rewardFunc]
+      qlearningextension:end-episode [isEndState] resetEpisode
+      qlearningextension:action-selection "e-greedy" [0.05 0.9]
+      qlearningextension:learning-rate learning-rate
+      qlearningextension:discount-factor discount-factor
+    ]
+    if leader-learning-const = 1 [update-seen]
   ]
 
 ask Queens [
@@ -117,18 +134,38 @@ ask Queens [
     qlearningextension:reward [rewardFunc]
     qlearningextension:end-episode [isEndState] resetEpisode
     qlearningextension:action-selection "e-greedy" [0.05 0.9]
-    qlearningextension:learning-rate 1
-    qlearningextension:discount-factor 0
+    qlearningextension:learning-rate learning-rate
+    qlearningextension:discount-factor discount-factor
   ]
-
+  set update-count update-rate
 
 end
+
+
+
+;;______________________________GO_FUNCTION__________________________________
 
 to go
   set patch-count 0
   set density-plot 0
   set average-density-plot 0
 
+    ask patches [
+
+    ifelse pcolor = black
+    [set patch-density 0]
+    [
+      set patch-density density_compute
+      set patch-count patch-count + 1
+    ]
+
+    set density-plot density-plot + patch-density
+
+  ]
+
+  ;plot-variables
+  set density-plot density-plot
+  set average-density-plot density-plot / patch-count
 
   ask Queens [
 
@@ -146,46 +183,112 @@ to go
       print "            Pick  Drop  Walk"
       print "H  P  M  D"
       print(qlearningextension:get-qtable)
-
-      print " "
-      py:set "x" qlearningextension:get-qtable
-      show py:runresult "x"
-    ]
-  ]
-
-  ask patches [
-
-    ifelse pcolor = black
-    [set patch-density 0]
-    [
-      set patch-density density_compute
-      set patch-count patch-count + 1
+      print ""
     ]
 
-    set density-plot density-plot + patch-density
-
-  ;  set plabel patch-density
-
-
-    ;patch-label-function ;;NOT WORK
+    py:set "x" qlearningextension:get-qtable
   ]
 
-  set density-plot density-plot
+  if leader-learning-const = 1 [
+    if update-count = update-rate [
 
-  set average-density-plot density-plot / patch-count
+      (py:run
+        "q = x.split('\\n')"
+        "del q[0]"
+        "del q[-2:]"
+        "qtable = ''"
+        "for i in range(len(q)):"
+        "    hold = (q[i][0])"
+        "    patch = int(q[i][2:4])"
+        "    memory = int(q[i][5:7])"
+        "    density = int(q[i][8:10])"
+        "    score = q[i].replace('>','/').split('/')"
+        "    pick = int(float(score[1].strip()))"
+        "    drop = int(float(score[2].strip()))"
+        "    walk = int(float(score[3].strip()))"
+        "    stateactions = f'{hold}{patch}{memory}{density}:{pick}.{drop}.{walk}/'"
+
+        "    qtable += stateactions"
+      )
+      set update-count 0
+    ]
+
+    set update-count update-count + 1
+  ]
+
+
+
+
 
 
   ask Ants [
     ;lettura della table
     ;scelta dell'azione, inputpy: varibaili di stato, outputpy: azione scelta 0 1 2
 
-    update-seen
+    if leader-learning-const = 0 [
+        if verbose-state [
+        print "Hold - Patch - Memory - Density"
+        print (word "  " hold "      " patch-under "       " last-seen "        " density)
+        print " "
+      ]
 
-    ;python here
+      qlearningextension:learning
 
-    ;if action selected = 0. Fai pick
-    ;if action selecte = 1 fai drop
-    ;if action selected = 2 fai walk
+      if verbose [
+        print (word "ACTION: " actionperformed  "  REWARD: " reward )
+        print " "
+        print "            Pick  Drop  Walk"
+        print "H  P  M  D"
+        print(qlearningextension:get-qtable)
+        print ""
+      ]
+    ]
+
+    if leader-learning-const = 1 [
+
+      py:set "hold" hold
+      py:set "patch" patch-under
+      py:set "memory" last-seen
+      py:set "density" density
+
+      (py:run
+        "found = 0"
+        "curstate=f'{hold}{patch}{memory}{density}'"
+        "table = qtable.split('/')"
+        "del table[-1]"
+        "for i in range(len(table)):"
+        "    s = (table[i][0:4])"
+        "    if curstate == s:"
+        "        pick = table[i][5]"
+        "        drop = table[i][7]"
+        "        walk = table[i][9]"
+        "        found = 1"
+
+        "        l = [pick, drop, walk]"
+        "        if pick > drop:"
+        "            if drop <= walk:"
+        "                action = 1"
+        "            if pick <= walk:"
+        "                action = 1"
+        "        elif pick > drop:"
+        "            pass"
+        "        elif pick < drop:"
+        "            pass"
+        "        else:"
+        "            action = random.randrange(0,3)"
+
+        "if found == 0:"
+        "    action = 2"
+      )
+      ;print (word hold " " patch-under " " last-seen " " density)
+
+      set act py:runresult "action"
+      ;show py:runresult "action"
+      set act 1
+      if act = 0 [pick-up-move-NL]
+      if act = 1 [drop-move-NL]
+      if act = 2 [hold-move-NL]
+    ]
   ]
 
   tick
@@ -200,12 +303,12 @@ end
 to pick-up-move
   set actionperformed "pickupF"
 
-  if hold = 1 [set reward 0] ;h1 pX
+  if hold = 1 [set reward -1] ;h1 pX
 
   if hold = 0 and walk-counter = 0
   [
     if patch-under = 0 [set reward 0]
-    if patch-under = 1  and density < upper-threshold
+    if patch-under = 1  and density <= upper-threshold
     [
       if density < density-threshold [set reward 1]
       if density >= density-threshold  [set reward -1]
@@ -216,8 +319,6 @@ to pick-up-move
       set pcolor 0
       set hold 1
       set last-seen 0
-
-
 
       set actionperformed "pickup"
     ]
@@ -244,7 +345,7 @@ to drop-move
       set actionperformed "dropF"
     ]
 
-    if patch-under = 0
+    if patch-under = 0 and density >= lower-threshold
     [
       set pcolor color
       set color white
@@ -268,7 +369,7 @@ to drop-move
       set hold 0
       set actionperformed "drop"
 
-      set walk-counter 5
+      set walk-counter 2
     ]
   ]
 
@@ -311,6 +412,7 @@ to hold-move
     ]
 
   ]
+
   set walk-counter walk-counter - 1
   if walk-counter < 0 [set walk-counter 0]
 
@@ -335,17 +437,78 @@ to update-seen
   [
     set last-seen last-seen + 1
     if last-seen > max-memory [set last-seen max-memory]]
-
-  ant-label-function
-
-
-
 end
 
 to move
      rt random 30
      lt random 30
      fd 1
+end
+
+
+
+;;_______________________NON_LEARNER_ACTIONS____________________________________
+;;_____________________HOLD_NL__________________________________________
+to hold-move-NL
+
+ set actionperformed "move"
+ move
+
+  set walk-counter walk-counter - 1
+  if walk-counter < 0 [set walk-counter 0]
+  update-seen
+
+end
+
+;;_____________________PICK_UP_NL_____________________________
+to pick-up-move-NL
+
+  set actionperformed "pickupF"
+
+
+  if hold = 0 and walk-counter = 0
+  [
+    if patch-under = 1  and density < upper-threshold
+    [
+      set color pcolor
+      set pcolor 0
+      set hold 1
+      set last-seen 0
+
+      set actionperformed "pickup"
+    ]
+  ]
+
+    update-seen
+end
+
+;;_____________________DROP_NL_____________________________
+to drop-move-NL
+
+  if hold = 0
+  [
+    set actionperformed "dropF"
+  ]
+
+  if hold = 1
+  [
+    if patch-under = 1 [set actionperformed "dropF"]
+
+    if patch-under = 0
+    [
+      set pcolor color
+      set color white
+
+      set last-seen 0
+      set hold 0
+      set actionperformed "drop"
+
+      set walk-counter 5
+    ]
+  ]
+
+  update-seen
+
 end
 
 
@@ -397,48 +560,6 @@ end
 
 
 ;;___________________________UTILITIES____________________________________
-
-to patch-label-function
-
-  if patch-label-active = 0 and patch-label = 1
-  [
-    set patch-label-active 1
-    if patch-density != 0 [set plabel patch-density]
-
-  ]
-
-  if patch-label-active = 1 and patch-label = 0
-  [
-    set patch-label-active 0
-    ask patches [set plabel ""]
-  ]
-
-end
-
-to ant-label-function
-  ask ants [
-    if ant-label-active = 1
-  [
-    if ant-label = true [
-      if ant-label-type = "last-seen" [set label last-seen]
-      if ant-label-type = "density" [set label density]]
-
-    if ant-label = false [
-      set label "X"
-      print "label spente"
-      set ant-label-active 0]
-  ]
-
-  if ant-label-active = 0
-  [
-    if ant-label = true [
-      if ant-label-type = "last-seen" [set label last-seen]
-      if ant-label-type = "density" [set label density]
-      set ant-label-active 1
-    ]
-  ]
-  ]
-end
 @#$#@#$#@
 GRAPHICS-WINDOW
 415
@@ -468,10 +589,10 @@ ticks
 30.0
 
 BUTTON
-332
-14
-395
-47
+77
+488
+140
+521
 Setup
 setup
 NIL
@@ -493,7 +614,7 @@ episode-length
 episode-length
 20000
 10000000
-4000041.0
+4000044.0
 1
 1
 NIL
@@ -523,9 +644,9 @@ SLIDER
 127
 population
 population
-1
-25
-13.0
+0
+100
+0.0
 1
 1
 NIL
@@ -540,7 +661,7 @@ max-memory
 max-memory
 05
 9
-9.0
+6.0
 1
 1
 NIL
@@ -553,7 +674,7 @@ SWITCH
 601
 verbose
 verbose
-1
+0
 1
 -1000
 
@@ -564,7 +685,7 @@ SWITCH
 562
 verbose-state
 verbose-state
-1
+0
 1
 -1000
 
@@ -592,7 +713,7 @@ objects-number
 objects-number
 5
 400
-337.0
+355.0
 1
 1
 NIL
@@ -613,17 +734,6 @@ colors
 NIL
 HORIZONTAL
 
-SWITCH
-28
-155
-139
-188
-patch-label
-patch-label
-0
-1
--1000
-
 SLIDER
 44
 57
@@ -640,36 +750,25 @@ NIL
 HORIZONTAL
 
 SLIDER
-217
-568
-389
-601
+1105
+567
+1277
+600
 upper-threshold
 upper-threshold
 3
 9
-6.0
+9.0
 1
 1
 NIL
 HORIZONTAL
 
-SWITCH
-289
-155
-392
-188
-ant-label
-ant-label
-0
-1
--1000
-
 PLOT
-68
-198
-397
-430
+75
+195
+404
+427
 Average Density
 NIL
 NIL
@@ -683,30 +782,116 @@ false
 PENS
 "default" 1.0 0 -16777216 true "" "plot average-density-plot"
 
-CHOOSER
-144
-143
-282
-188
-ant-label-type
-ant-label-type
-"last-seen" "density"
-0
-
 SLIDER
-86
-447
-258
-480
+1105
+528
+1277
+561
 lower-threshold
 lower-threshold
 0
 4
-4.0
+0.0
 1
 1
 NIL
 HORIZONTAL
+
+SWITCH
+64
+147
+200
+180
+Leader-learning
+Leader-learning
+0
+1
+-1000
+
+SLIDER
+229
+146
+401
+179
+update-rate
+update-rate
+1
+20
+20.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+1127
+64
+1299
+97
+learning-rate
+learning-rate
+0
+1
+1.0
+0.05
+1
+NIL
+HORIZONTAL
+
+TEXTBOX
+1127
+35
+1380
+53
+Reinforcement Learning Params
+15
+0.0
+0
+
+SLIDER
+1128
+105
+1300
+138
+discount-factor
+discount-factor
+0
+1
+0.0
+0.05
+1
+NIL
+HORIZONTAL
+
+TEXTBOX
+229
+22
+379
+41
+Setup Params:
+15
+0.0
+0
+
+TEXTBOX
+287
+474
+437
+492
+affects pick-up reward\n
+10
+0.0
+1
+
+TEXTBOX
+1104
+505
+1299
+535
+Density limits for pick-up and drop:
+12
+0.0
+1
 
 @#$#@#$#@
 ## WHAT IS IT?

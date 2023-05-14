@@ -13,7 +13,8 @@ threelines = "--------- Q-Table --------- \n0.01.00.02.0  -> 1.0 / 0.0 / 0.0\n0.
 
 x = line.split("\n")
 
-q = threelines.split("\n")
+q = threelines.split('\n')
+print (q)
 del q[0]
 del q[-2:]
 
